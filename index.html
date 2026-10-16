@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DRIP Dividend Reinvestment Growth Tracker</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body { background: #111827; }
+.input-field {
+  width: 100%;
+  background: #374151;
+  border: 1px solid #4b5563;
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  color: #f3f4f6;
+  font-size: 0.875rem;
+}
+.input-field:focus { outline: none; border-color: #10b981; }
+.tooltip {
+  position: relative;
+}
+.tooltip:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f2937;
+  color: #d1d5db;
+  border: 1px solid #374151;
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  z-index: 10;
+}
+</style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-4">
+<div class="max-w-5xl mx-auto">
+  <h1 class="text-3xl font-bold text-center mb-1 text-emerald-400">DRIP Dividend Reinvestment Tracker</h1>
+  <p class="text-center text-gray-400 mb-6 text-sm">Compound growth calculator for dividend reinvestment strategies</p>
+
+  <!-- Inputs -->
+  <div class="bg-gray-800 rounded-xl p-5 mb-6">
+    <h2 class="text-sm font-semibold text-gray-300 mb-3 uppercase tracking-wide">Investment Parameters</h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="tooltip" data-tip="Initial lump-sum investment">
+        <label class="block text-xs text-gray-400 mb-1">Initial Investment ($)</label>
+        <input type="number" id="initialInv" value="10000" min="100" step="100" class="input-field" aria-label="Initial investment amount">
+      </div>
+      <div class="tooltip" data-tip="Current share price">
+        <label class="block text-xs text-gray-400 mb-1">Share Price ($)</label>
+        <input type="number" id="sharePrice" value="50" min="0.01" step="0.01" class="input-field" aria-label="Initial share price">
+      </div>
+      <div class="tooltip" data-tip="Annual dividend as % of share price">
+        <label class="block text-xs text-gray-400 mb-1">Dividend Yield (%)</label>
+        <input type="number" id="divYield" value="4.0" min="0" max="30" step="0.1" class="input-field" aria-label="Annual dividend yield percentage">
+      </div>
+      <div class="tooltip" data-tip="Annual dividend per share growth rate">
+        <label class="block text-xs text-gray-400 mb-1">Dividend Growth (%/yr)</label>
+        <input type="number" id="divGrowth" value="6.0" min="0" max="50" step="0.1" class="input-field" aria-label="Annual dividend growth rate">
+      </div>
+      <div class="tooltip" data-tip="Annual share price appreciation">
+        <label class="block text-xs text-gray-400 mb-1">Price Appreciation (%/yr)</label>
+        <input type="number" id="priceApp" value="7.0" min="-20" max="50" step="0.1" class="input-field" aria-label="Annual share price appreciation rate">
+      </div>
+      <div class="tooltip" data-tip="Investment period in years">
+        <label class="block text-xs text-gray-400 mb-1">Period (years)</label>
+        <input type="number" id="years" value="20" min="1" max="50" step="1" class="input-field" aria-label="Investment period in years">
+      </div>
+      <div class="tooltip" data-tip="Optional monthly additional contribution">
+        <label class="block text-xs text-gray-400 mb-1">Monthly Contribution ($)</label>
+        <input type="number" id="monthlyContrib" value="200" min="0" step="10" class="input-field" aria-label="Monthly additional contribution">
+      </div>
+      <div class="flex items-end">
+        <button onclick="compute()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-400" aria-label="Calculate DRIP returns">Calculate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Stats -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="summaryStats">
+  </div>
+
+  <!-- Chart -->
+  <div class="bg-gray-800 rounded-xl p-5 mb-6">
+    <h2 class="text-sm font-semibold text-gray-300 mb-3">Portfolio Value: DRIP vs No Reinvestment</h2>
+    <div class="flex gap-6 mb-3 text-xs">
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-emerald-400"></span>With DRIP</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-orange-400"></span>No Reinvestment</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-blue-400"></span>Total Cost Basis</span>
+    </div>
+    <canvas id="mainChart" height="280" aria-label="Line chart showing portfolio growth with DRIP vs without"></canvas>
+  </div>
+
+  <!-- Dividends per year chart -->
+  <div class="bg-gray-800 rounded-xl p-5 mb-6">
+    <h2 class="text-sm font-semibold text-gray-300 mb-3">Annual Dividend Income Growth</h2>
+    <canvas id="divChart" height="160" aria-label="Bar chart of dividend income per year"></canvas>
+  </div>
+
+  <!-- Data Table -->
+  <div class="bg-gray-800 rounded-xl p-5 overflow-x-auto">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-semibold text-gray-300">Year-by-Year Breakdown</h2>
+      <button onclick="exportCSV()" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded transition-colors focus:outline-none" aria-label="Export data to CSV">Export CSV</button>
+    </div>
+    <table class="w-full text-xs" aria-label="Year by year DRIP investment breakdown">
+      <thead>
+        <tr class="text-gray-400 border-b border-gray-700">
+          <th class="text-right py-2 pr-3">Year</th>
+          <th class="text-right py-2 pr-3">Share Price</th>
+          <th class="text-right py-2 pr-3">Shares (DRIP)</th>
+          <th class="text-right py-2 pr-3">Div/yr (DRIP)</th>
+          <th class="text-right py-2 pr-3">Value (DRIP)</th>
+          <th class="text-right py-2 pr-3">Value (No DRIP)</th>
+          <th class="text-right py-2 pr-3">Cumul. Divs</th>
+          <th class="text-right py-2">Total Return</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let tableData = [];
+
+function fmt(n, decimals=2) {
+  return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+function fmtCurr(n) {
+  return '$' + fmt(n);
+}
+
+function compute() {
+  const initialInv = parseFloat(document.getElementById('initialInv').value) || 10000;
+  const sharePrice0 = parseFloat(document.getElementById('sharePrice').value) || 50;
+  const divYieldPct = parseFloat(document.getElementById('divYield').value) / 100;
+  const divGrowthPct = parseFloat(document.getElementById('divGrowth').value) / 100;
+  const priceAppPct = parseFloat(document.getElementById('priceApp').value) / 100;
+  const numYears = Math.min(50, parseInt(document.getElementById('years').value) || 20);
+  const monthlyContrib = parseFloat(document.getElementById('monthlyContrib').value) || 0;
+  const annualContrib = monthlyContrib * 12;
+
+  // DRIP simulation (annual steps)
+  let drip_shares = initialInv / sharePrice0;
+  let nodrip_shares = initialInv / sharePrice0;
+  let price = sharePrice0;
+  let divPerShare = sharePrice0 * divYieldPct;
+  let cumulDivsDRIP = 0;
+  let cumulDivsNoDRIP = 0;
+  let cumulContrib = initialInv;
+
+  tableData = [];
+
+  const dripValues = [initialInv];
+  const nodripValues = [initialInv];
+  const costBases = [initialInv];
+
+  for (let yr = 1; yr <= numYears; yr++) {
+    // Price at end of year
+    price = price * (1 + priceAppPct);
+    divPerShare = divPerShare * (1 + divGrowthPct);
+
+    // Annual contribution (buy shares at avg price for the year)
+    const midPrice = price / (1 + priceAppPct / 2);
+    const contribShares = annualContrib / midPrice;
+    drip_shares += contribShares;
+    nodrip_shares += contribShares;
+    cumulContrib += annualContrib;
+
+    // DRIP: dividends buy new shares (priced at mid-year avg)
+    const dripDivIncome = drip_shares * divPerShare;
+    const newShares = dripDivIncome / midPrice;
+    drip_shares += newShares;
+    cumulDivsDRIP += dripDivIncome;
+
+    // No DRIP: dividends taken as cash
+    const nodripDivIncome = nodrip_shares * divPerShare;
+    cumulDivsNoDRIP += nodripDivIncome;
+
+    const dripValue = drip_shares * price;
+    const nodripValue = nodrip_shares * price + cumulDivsNoDRIP;
+
+    dripValues.push(dripValue);
+    nodripValues.push(nodripValue);
+    costBases.push(cumulContrib);
+
+    tableData.push({
+      yr, price, drip_shares, divPerShare, dripDivIncome, dripValue, nodripValue,
+      cumulDivsDRIP, cumulContrib,
+      totalReturn: ((dripValue - cumulContrib) / cumulContrib * 100)
+    });
+  }
+
+  // Summary
+  const finalDRIP = dripValues[dripValues.length - 1];
+  const finalNoDRIP = nodripValues[nodripValues.length - 1];
+  const cagr = (Math.pow(finalDRIP / initialInv, 1 / numYears) - 1) * 100;
+  const multFactor = finalDRIP / cumulContrib;
+
+  const stats = [
+    { label: 'Final Value (DRIP)', value: fmtCurr(finalDRIP), color: 'text-emerald-400', sub: `${numYears}yr portfolio` },
+    { label: 'Total Dividends Reinvested', value: fmtCurr(cumulDivsDRIP), color: 'text-blue-400', sub: 'compounded' },
+    { label: 'CAGR', value: cagr.toFixed(2) + '%', color: 'text-yellow-400', sub: 'compound annual growth' },
+    { label: 'Multiply Factor', value: multFactor.toFixed(2) + 'x', color: 'text-purple-400', sub: 'vs total invested' },
+  ];
+
+  document.getElementById('summaryStats').innerHTML = stats.map(s => `
+    <div class="bg-gray-800 rounded-xl p-4 text-center">
+      <div class="${s.color} text-2xl font-bold">${s.value}</div>
+      <div class="text-gray-500 text-xs mt-1">${s.label}</div>
+      <div class="text-gray-600 text-xs">${s.sub}</div>
+    </div>
+  `).join('');
+
+  // Build table
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = tableData.map((row, i) => {
+    const isFirst = i === 0;
+    const isLast = i === tableData.length - 1;
+    const highlight = isLast ? 'bg-gray-750 font-semibold' : 'border-b border-gray-700 hover:bg-gray-750';
+    return `<tr class="${highlight}">
+      <td class="text-right py-1.5 pr-3 font-mono">${row.yr}</td>
+      <td class="text-right py-1.5 pr-3 font-mono text-gray-400">${fmtCurr(row.price)}</td>
+      <td class="text-right py-1.5 pr-3 font-mono">${fmt(row.drip_shares, 2)}</td>
+      <td class="text-right py-1.5 pr-3 font-mono text-emerald-400">${fmtCurr(row.dripDivIncome)}</td>
+      <td class="text-right py-1.5 pr-3 font-mono text-emerald-300">${fmtCurr(row.dripValue)}</td>
+      <td class="text-right py-1.5 pr-3 font-mono text-orange-400">${fmtCurr(row.nodripValue)}</td>
+      <td class="text-right py-1.5 pr-3 font-mono text-blue-400">${fmtCurr(row.cumulDivsDRIP)}</td>
+      <td class="text-right py-1.5 font-mono text-yellow-400">${row.totalReturn.toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+
+  // Draw charts
+  drawMainChart(dripValues, nodripValues, costBases, numYears);
+  drawDivChart(tableData);
+}
+
+function drawMainChart(dripV, nodripV, costV, numYears) {
+  const canvas = document.getElementById('mainChart');
+  canvas.width = canvas.parentElement.offsetWidth - 40 || 700;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const PAD = { top: 20, right: 20, bottom: 40, left: 80 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+
+  const maxVal = Math.max(...dripV, ...nodripV);
+  const n = dripV.length;
+
+  function xPos(i) { return PAD.left + (i / (n - 1)) * chartW; }
+  function yPos(v) { return PAD.top + chartH - (v / maxVal) * chartH; }
+
+  // Grid lines
+  ctx.strokeStyle = '#374151';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const y = PAD.top + (i / 5) * chartH;
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, y);
+    ctx.lineTo(PAD.left + chartW, y);
+    ctx.stroke();
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    const val = maxVal * (1 - i / 5);
+    ctx.fillText('$' + (val >= 1000000 ? (val/1000000).toFixed(1)+'M' : (val/1000).toFixed(0)+'K'), PAD.left - 4, y + 4);
+  }
+
+  // X axis labels
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= Math.min(numYears, 10); i++) {
+    const yr = Math.round(i / 10 * numYears);
+    const x = xPos(yr);
+    ctx.fillText('Y' + yr, x, H - PAD.bottom + 16);
+  }
+
+  // Cost basis area fill
+  ctx.beginPath();
+  ctx.moveTo(xPos(0), yPos(0));
+  for (let i = 0; i < n; i++) ctx.lineTo(xPos(i), yPos(costV[i]));
+  ctx.lineTo(xPos(n-1), yPos(0));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+  ctx.fill();
+
+  // Cost basis line
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    i === 0 ? ctx.moveTo(xPos(i), yPos(costV[i])) : ctx.lineTo(xPos(i), yPos(costV[i]));
+  }
+  ctx.strokeStyle = '#60a5fa';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // No-DRIP line
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    i === 0 ? ctx.moveTo(xPos(i), yPos(nodripV[i])) : ctx.lineTo(xPos(i), yPos(nodripV[i]));
+  }
+  ctx.strokeStyle = '#fb923c';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // DRIP line
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    i === 0 ? ctx.moveTo(xPos(i), yPos(dripV[i])) : ctx.lineTo(xPos(i), yPos(dripV[i]));
+  }
+  ctx.strokeStyle = '#34d399';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Final value labels
+  const lastDRIP = dripV[n-1];
+  const lastNoDRIP = nodripV[n-1];
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#34d399';
+  ctx.fillText(lastDRIP >= 1e6 ? '$' + (lastDRIP/1e6).toFixed(2)+'M' : '$'+(lastDRIP/1000).toFixed(0)+'K', W - PAD.right - 60, yPos(lastDRIP) - 4);
+  ctx.fillStyle = '#fb923c';
+  ctx.fillText(lastNoDRIP >= 1e6 ? '$' + (lastNoDRIP/1e6).toFixed(2)+'M' : '$'+(lastNoDRIP/1000).toFixed(0)+'K', W - PAD.right - 60, yPos(lastNoDRIP) + 14);
+}
+
+function drawDivChart(rows) {
+  const canvas = document.getElementById('divChart');
+  canvas.width = canvas.parentElement.offsetWidth - 40 || 700;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const PAD = { top: 15, right: 20, bottom: 40, left: 70 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+
+  const maxDiv = Math.max(...rows.map(r => r.dripDivIncome));
+  const n = rows.length;
+  const barW = Math.max(2, chartW / n - 2);
+
+  ctx.strokeStyle = '#374151';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = PAD.top + (i / 4) * chartH;
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, y);
+    ctx.lineTo(PAD.left + chartW, y);
+    ctx.stroke();
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    const v = maxDiv * (1 - i / 4);
+    ctx.fillText('$'+(v >= 1000 ? (v/1000).toFixed(1)+'K' : v.toFixed(0)), PAD.left - 4, y + 4);
+  }
+
+  rows.forEach((row, i) => {
+    const x = PAD.left + (i / n) * chartW;
+    const barH = (row.dripDivIncome / maxDiv) * chartH;
+    const y = PAD.top + chartH - barH;
+
+    // Gradient bar
+    const grad = ctx.createLinearGradient(0, y, 0, y + barH);
+    grad.addColorStop(0, '#34d399');
+    grad.addColorStop(1, '#065f46');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, y, barW, barH);
+
+    // Year label (every 5)
+    if ((i + 1) % 5 === 0 || i === 0 || i === n - 1) {
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Y' + row.yr, x + barW / 2, H - PAD.bottom + 14);
+    }
+  });
+
+  // Title
+  ctx.fillStyle = '#9ca3af';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Div income/yr (DRIP)', PAD.left, PAD.top - 2);
+}
+
+function exportCSV() {
+  if (!tableData.length) { alert('Run calculation first.'); return; }
+  const headers = ['Year','Share Price','Shares (DRIP)','Div/yr','Value (DRIP)','Value (No DRIP)','Cumul Divs','Total Return%'];
+  const rows = tableData.map(r => [
+    r.yr, r.price.toFixed(2), r.drip_shares.toFixed(4), r.dripDivIncome.toFixed(2),
+    r.dripValue.toFixed(2), r.nodripValue.toFixed(2), r.cumulDivsDRIP.toFixed(2),
+    r.totalReturn.toFixed(1)
+  ]);
+  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'drip-projection.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Init
+compute();
+window.addEventListener('resize', () => {
+  if (tableData.length > 0) compute();
+});
+</script>
+</body>
+</html>
